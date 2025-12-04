@@ -1,0 +1,9 @@
+# Игнорировать все JSON-файлы
+*.json
+*.txt
+
+.env
+venv/
+
+.vscode/
+__pycache__/
