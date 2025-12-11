@@ -1,6 +1,6 @@
 import json
 from collections import defaultdict
-from all_stats_in_json import save_data_json
+from all_stats_in_json import save_data_json 
 
 """
 Скрипт который анализует статистику из базы зананий

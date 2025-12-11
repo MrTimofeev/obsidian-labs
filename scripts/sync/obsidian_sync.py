@@ -93,7 +93,7 @@ def load_config(file_path):
         return json.load(file)
 
 if __name__ == "__main__":
-    config = load_config("config.json")
+    config = load_config("config_sync.json")
     
     source = config["source_dir"]
     remote = config["remote_dir"]

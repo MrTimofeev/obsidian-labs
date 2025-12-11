@@ -1,0 +1,10 @@
+{
+  "source_dir": "",
+  "remote_dir": "",
+  "ssh": {
+        "host": "",
+        "username": "",
+        "port": ,
+        "password": ""
+    }
+}
