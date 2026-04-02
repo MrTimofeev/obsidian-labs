@@ -1,30 +1,21 @@
 import os
 import json
-from tqdm import tqdm
+import getpass
+from pathlib import Path
+from dotenv import load_dotenv
 import paramiko
 from stat import S_ISDIR
+from tqdm import tqdm
 
-
-"""
-Это вторая версия скрипта, которая позволит быстро и безболезненно синхронизировать мои заметки с компа на телефон
-Проблема первой версии в том, что я пытался сделать сихронизацию двухсторонней, что добавляло некоторое количество проблем. 
-Поэтому я решил изменить подход для синхронизации. 
-
-Теперь при каждой синхронизации на телефоне будет полностью удаляться вся текущая база, а после копироваться обновленная (основная)
-с ПК. Выбор такого подхода связан с тем что заметки на телефоне я почти не делаю. А если и буду делать то они заносятся в другое место,
-А после переносятся уже в основую базу. 
-
-В дальнейшем можно создать отдельную папку которая не будет затронута при синхронизации и скорее будет переноситься наоборот с телефона на пк.
-По такому же принципу. Удаление и полная замена. В данному случае в с телефона и определнной папки (например 09.Телефон).
-
-Для того чтобы произвести синхронизацию, запусти на телефоне термукс, и введи команду sshd, затем запусти скрипт, после завершения синхронизации
-закрой ссерисю в термукс.
-Для закрытия достаточно написать exit и закрыть termux
-"""
-
+# Загружаем переменные окружения
+load_dotenv()
 
 def remove_remote_directory(sftp, remote_path):
-    """Рекурсивно удаляет удалённую директорию (включая файлы и подпапки)."""
+    """Рекурсивно удаляет удалённую директорию."""
+    # Защита от удаления корня или важных системных папок
+    if not remote_path or remote_path == "/" or remote_path == ".":
+        raise ValueError(f"⛔ Попытка удалить опасный путь: {remote_path}")
+        
     try:
         files = sftp.listdir_attr(remote_path)
     except FileNotFoundError:
@@ -36,32 +27,35 @@ def remove_remote_directory(sftp, remote_path):
             remove_remote_directory(sftp, remote_item_path)
         else:
             sftp.remove(remote_item_path)
+    
     sftp.rmdir(remote_path)
 
-
 def upload_directory(sftp, local_dir, remote_dir):
-    """Рекурсивно загружает локальную директорию на удалённый сервер."""
-    # Создаём удалённую директорию
+    """Рекурсивно загружает локальную директорию с прогресс-баром."""
+    # Создаём удалённую директорию, если нет
     try:
         sftp.stat(remote_dir)
     except FileNotFoundError:
         sftp.mkdir(remote_dir)
 
-    # Собираем все файлы и папки для отображения прогресса
-    all_items = []
-    for root, dirs, files in os.walk(local_dir):
+    # Сбор всех файлов для точного подсчета прогресса (только файлы, т.к. папки создаются на лету)
+    all_files = []
+    for root, _, files in os.walk(local_dir):
         for name in files:
-            all_items.append(os.path.join(root, name))
-        for name in dirs:
-            all_items.append(os.path.join(root, name))
+            all_files.append(os.path.join(root, name))
 
-    with tqdm(total=len(all_items), desc="Загрузка файлов", unit="item") as pbar:
+    with tqdm(total=len(all_files), desc="📤 Загрузка файлов", unit="file") as pbar:
         _upload_recursive(sftp, local_dir, remote_dir, pbar)
 
-
 def _upload_recursive(sftp, local_dir, remote_dir, pbar):
-    """Вспомогательная рекурсивная функция для загрузки."""
-    for item in os.listdir(local_dir):
+    """Вспомогательная рекурсивная функция."""
+    try:
+        items = os.listdir(local_dir)
+    except PermissionError:
+        print(f"⚠️ Нет доступа к папке: {local_dir}")
+        return
+
+    for item in items:
         local_path = os.path.join(local_dir, item)
         remote_path = os.path.join(remote_dir, item).replace("\\", "/")
 
@@ -72,54 +66,102 @@ def _upload_recursive(sftp, local_dir, remote_dir, pbar):
                 sftp.mkdir(remote_path)
             _upload_recursive(sftp, local_path, remote_path, pbar)
         else:
-            sftp.put(local_path, remote_path)
+            # Пропускаем временные файлы и системный мусор
+            if item.startswith(".") or item.endswith("~"):
+                pbar.update(1)
+                continue
+                
+            try:
+                sftp.put(local_path, remote_path)
+            except Exception as e:
+                print(f"\n⚠️ Ошибка загрузки {item}: {e}")
         pbar.update(1)
 
+def main():
+    print("📱 Синхронизация Obsidian с телефоном (Wipe & Replace)")
+    
+    # 1. Получение конфигурации
+    config_file_str = os.getenv("SYNC_CONFIG_FILE", "config/config_sync.json")
+    config_path = Path(config_file_str)
+    
+    if not config_path.exists():
+        print(f"❌ Файл конфигурации не найден: {config_path}")
+        print("💡 Скопируйте config/config_sync.example.json в config/config_sync.json и заполните его.")
+        return
 
-def load_config(file_path):
-    """Загружает конфигурацию из JSON-файла."""
-    with open(file_path, "r", encoding="utf-8") as file:
-        return json.load(file)
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
 
+    # Читаем пути из конфига, но проверяем переменные окружения для переопределения
+    source_dir = os.getenv("SYNC_SOURCE_DIR") or config.get("source_dir")
+    remote_dir = os.getenv("SYNC_REMOTE_DIR") or config.get("remote_dir")
+    ssh_host = config.get("ssh", {}).get("host")
+    ssh_port = config.get("ssh", {}).get("port", 8022) # Стандартный порт Termux SSH
+    ssh_user = config.get("ssh", {}).get("username")
+    
+    # Пароль берем ТОЛЬКО из env или запрашиваем вручную. НИКОГДА из файла!
+    ssh_password = os.getenv("SSH_PASSWORD")
 
-if __name__ == "__main__":
-    config = load_config("config.json")
+    if not all([source_dir, remote_dir, ssh_host, ssh_user]):
+        print("❌ Ошибка: Не все параметры конфигурации заполнены.")
+        return
 
-    source = config["source_dir"]
-    remote = config["remote_dir"]
-    ssh_config = config["ssh"]
+    if not os.path.isdir(source_dir):
+        print(f"❌ Локальная папка не найдена: {source_dir}")
+        return
 
-    if not os.path.isdir(source):
-        raise FileNotFoundError(f"Локальная папка не найдена: {source}")
+    # Безопасный запрос пароля, если нет в env
+    if not ssh_password:
+        print("🔒 Пароль не найден в переменной окружения SSH_PASSWORD.")
+        ssh_password = getpass.getpass("Введите пароль SSH для телефона: ")
 
+    # Подключение
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # В продакшене лучше использовать KnownHostsFile
 
+    sftp = None
     try:
-        print("Подключение к телефону...")
+        print(f"🔌 Подключение к {ssh_user}@{ssh_host}:{ssh_port}...")
         ssh.connect(
-            hostname=ssh_config["host"],
-            port=ssh_config["port"],
-            username=ssh_config["username"],
-            password=ssh_config["password"],
-            timeout=10
+            hostname=ssh_host,
+            port=ssh_port,
+            username=ssh_user,
+            password=ssh_password,
+            timeout=15,
+            allow_agent=False,
+            look_for_keys=False
         )
         sftp = ssh.open_sftp()
+        print("✅ Подключение успешно!")
 
-        print(f"Удаление старой базы на телефоне: {remote}")
-        remove_remote_directory(sftp, remote)
+        # Проверка существования удаленной папки перед удалением
+        try:
+            sftp.stat(remote_dir)
+            print(f"🗑️ Удаление старой базы: {remote_dir}")
+            remove_remote_directory(sftp, remote_dir)
+        except FileNotFoundError:
+            print(f"ℹ️ Папка {remote_dir} не найдена, создадим новую.")
 
-        print(f"Создание новой папки: {remote}")
-        sftp.mkdir(remote)
+        print(f"📂 Создание папки: {remote_dir}")
+        sftp.mkdir(remote_dir)
 
-        print("Загрузка новой базы...")
-        upload_directory(sftp, source, remote)
+        print("🚀 Начало загрузки...")
+        upload_directory(sftp, source_dir, remote_dir)
 
-        print("✅ Синхронизация завершена!")
+        print("\n🎉 Синхронизация завершена успешно!")
+        print("💡 Не забудьте выполнить 'exit' в Termux на телефоне.")
 
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"\n❌ Критическая ошибка: {e}")
+        if "Authentication failed" in str(e):
+            print("💡 Проверьте правильность пароля и пользователя.")
+        elif "Connection refused" in str(e):
+            print("💡 Убедитесь, что на телефоне запущен SSH (команда 'sshd' в Termux).")
     finally:
-        if 'sftp' in locals():
+        if sftp:
             sftp.close()
         ssh.close()
+        print("🔌 Соединение закрыто.")
+
+if __name__ == "__main__":
+    main()
