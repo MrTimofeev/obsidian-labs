@@ -1,6 +1,8 @@
 # Игнорировать все JSON-файлы
 *.json
 *.txt
+*.png
+
 
 .env
 venv/
@@ -9,3 +11,4 @@ venv/
 __pycache__/
 
 !requirements.txt
+
