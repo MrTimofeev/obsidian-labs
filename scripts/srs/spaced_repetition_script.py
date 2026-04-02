@@ -2,44 +2,34 @@ import os
 import json
 import random
 from datetime import date, timedelta
+from dotenv import load_dotenv
+from pathlib import Path
 
-"""
-Это срипт для интервального повторения
-Он выбирает все файлы из твоей базы в которых есть: 
-#повторить
-После этого он собирает эти файлы в json, который состоит из такой структуры:
-[
-    {
-        file_name: "Название файла", # нужно для поиска файла
-        date_for_repeat: "Дата для повторения", # Сравнивается с текущей, и если совпадает выдает чтобы ты прочитал
-        number_of_repetitions: "количество повторений" # количество Coroutines VS Threads VS Processes.mdкоторое влияет на то, на сколько дата для повторения сдвинется
-    }
-]
-И выдает файлы которые нужно повторить сегодня.
-Если на текущую дату нет файлов для повторения, берет случайные 5 файлов.
-
-После того как ты прочел что писал тебе предложиться отметить файлы и дать им оценку, как ты их помнишь, на основе оценки будет 
-перерасчитываться дата следующего повторения
-
-Это все нужно для того чтобы постоянно актуализировать информацию в своей памяти, и если что редактировать их данные в случает устаревания.
-"""
+load_dotenv()
 
 
 class SRSManager:
-    def __init__(self, flag=True):
-        if flag:
-            self.base_dir = "D:\\База Знаний\\pc\\Programming"
-            self.reviews_file = os.path.join(
-                "D:\\База Знаний\\pc\\Programming\\08. Повторение", "reviews.json")
-            self.review_list_file = os.path.join(
-                "D:\\База Знаний\\pc\\Programming\\08. Повторение", "Повторение.md")
-        else:
-            self.base_dir = "D:\\База Знаний\\pc\\Logs_of_my_Life"
-            self.reviews_file = os.path.join(
-                "D:\\База Знаний\\pc\\Logs_of_my_Life\\08. Повторение", "reviews.json")
-            self.review_list_file = os.path.join(
-                "D:\\База Знаний\\pc\\Logs_of_my_Life\\08. Повторение", "Повторение.md")
+    def __init__(self):
+        vault_path = os.getenv("OBSIDIAN_VAULT_PATH")
+        if not vault_path:
+            raise ValueError(
+                "Ошибка: Не найдена переменная OBSIDIAN_VAULT_PATH. проверьте файл .env")
+
+        self.base_dir = Path(vault_path)
+
+        srs_folder_name = os.getenv("SRS_FOLDER_RELATIVE", "08. Повторение")
+        self.srs_dir = self.base_dir / srs_folder_name
+
+        self.reviews_file = self.srs_dir / "reviews.json"
+        self.review_list_file = self.srs_dir / "Повторение.md"
+
+        self.templates_ignore = os.getenv(
+            "TEMPLATES_FOLDER_IGNORE", "05. Шаблоны")
+
         self.today = date.today()
+
+        self.srs_dir.mkdir(parents=True, exist_ok=True)
+
         self.notes = self.load_reviews()
 
     def load_reviews(self):
@@ -58,19 +48,26 @@ class SRSManager:
         """Сохраняет текущие данные в reviews.json"""
         with open(self.reviews_file, "w", encoding="utf-8") as f:
             json.dump(self.notes, f, ensure_ascii=False, indent=2)
-        print(f"✅ Сохранено в {self.reviews_file}")
+        # print(f"✅ Сохранено в {self.reviews_file}")
 
     def scan_for_new_notes(self):
         """Находит все .md с '#повторить', которых ещё нет в reviews.json"""
         existing_files = {note["file_name"] for note in self.notes}
         new_notes = []
 
+        ignore_folder_name = self.templates_ignore.replace("\\", "/")
+
         for root, dirs, files in os.walk(self.base_dir):
-            if "05. Шаблоны" in root.split(os.sep):
+            if ignore_folder_name in root.split(os.sep):
                 continue
+
             for file in files:
                 if file.endswith(".md"):
-                    file_path = os.path.join(root, file)
+                    file_path = Path(root) / file
+                    
+                    if file in existing_files:
+                        continue
+                    
                     try:
                         with open(file_path, "r", encoding="utf-8") as f:
                             content = f.read()
@@ -113,11 +110,15 @@ class SRSManager:
         future_notes = []
 
         for note in self.notes:
-            repeat_date = date.fromisoformat(note["date_for_repeat"])
-            if repeat_date <= self.today:
+            try:
+                repeat_date = date.fromisoformat(note["date_for_repeat"])
+                if repeat_date <= self.today:
+                    today_notes.append(note)
+                else:
+                    future_notes.append(note)
+            except ValueError:
+                # Если дата битая, считаем что пора повторить
                 today_notes.append(note)
-            else:
-                future_notes.append(note)
 
         # Если ничего на сегодня — выбираем 5 случайных
         if not today_notes and future_notes:
@@ -141,7 +142,7 @@ class SRSManager:
 
         with open(self.review_list_file, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"📄 Создан/обновлён файл '{self.review_list_file}'")
+        # print(f"📄 Создан/обновлён файл '{self.review_list_file}'")
 
     def run_daily_review(self):
         """Главный цикл"""
@@ -155,7 +156,6 @@ class SRSManager:
             print("📭 Нет заметок для повторения сегодня.")
             return
 
-        # ✅ ПЕРВЫЙ ШАГ: ГЕНЕРИРУЕМ ССЫЛКИ — ДО того, как спрашиваем оценку!
         self.generate_review_list(today_notes)
 
         # Выводим в консоль (для справки)
@@ -167,7 +167,6 @@ class SRSManager:
         print(f"   {self.review_list_file}")
         print("   Прочитай заметки — затем вернись сюда и введи оценки.")
 
-        # ✅ ВТОРОЙ ШАГ: ЗАПРОС ОЦЕНОК — ПОСЛЕ того, как ты прочитал
         print("\n👉 Введите оценку для каждой заметки (0=не помню, 1=трудно, 2=легко)")
         print("   Формат: 'имя_файла:оценка' (например: Важно.md:2)")
         print("   Нажми Enter, если ничего не менять.")
@@ -210,5 +209,8 @@ class SRSManager:
 # 🚀 ЗАПУСК СИСТЕМЫ
 # ==========================
 if __name__ == "__main__":
-    srs = SRSManager()
-    srs.run_daily_review()
+    try:
+        srs = SRSManager()
+        srs.run_daily_review()
+    except ValueError as e:
+        print(e)
