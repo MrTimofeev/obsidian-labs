@@ -147,7 +147,7 @@ def run_dashboard_plotter():
 
     if existing_habits:
         # Конвертируем в 0/1 безопасно
-        habit_df = df[existing_habits].applymap(lambda x: 1 if str(x).lower() == 'да' else 0)
+        habit_df = df[existing_habits].map(lambda x: 1 if str(x).lower() == 'да' else 0)
         
         ax3.set_yticks(range(len(existing_habits)))
         ax3.set_yticklabels(existing_habits, fontsize=12, fontweight='bold')

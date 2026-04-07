@@ -99,7 +99,7 @@ def main():
     args = parser.parse_args()
 
     # 1. Конфигурация путей
-    vault_path_str = os.getenv("OBSIDIAN_VAULT_PATH")
+    vault_path_str = os.getenv("VAULT_PERSONAL")
     if not vault_path_str:
         print("❌ Ошибка: Не найдена переменная OBSIDIAN_VAULT_PATH в .env")
         return
