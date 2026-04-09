@@ -1,0 +1,88 @@
+/* Общие стили */
+Screen {
+    align: center middle;
+}
+
+/* Стили Главного Меню */
+#menu-container {
+    width: 60;
+    height: auto;
+    border: double blue;
+    padding: 1 2;
+    background: $surface;
+}
+
+#menu-container Static.title {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+    color: $text;
+}
+
+Button {
+    width: 100%;
+    margin: 1 0;
+}
+
+#status-msg {
+    text-align: center;
+    margin-top: 1;
+    color: $success; /* Или $error если ошибка */
+}
+
+/* Стили Экрана Повторения */
+#card-container {
+    width: 80%;
+    height: 80%;
+    border: solid green;
+    padding: 1 2;
+    layout: vertical;
+}
+
+#counter {
+    dock: top;
+    text-align: right;
+    color: $primary-lighten-2;
+    padding-bottom: 1;
+}
+
+#question-box {
+    height: 40%;
+    content-align: center middle;
+    text-style: bold;
+    padding: 1;
+}
+
+#answer-box {
+    height: 40%;
+    content-align: center middle;
+    text-style: italic;
+    color: yellow;
+    padding: 1;
+    border-top: dashed gray;
+}
+
+/* Класс для скрытия элемента */
+.hidden {
+    display: none;
+}
+
+#controls {
+    height: 3;
+    dock: bottom;
+    content-align: center middle;
+    border-top: solid gray;
+}
+
+.hint {
+    color: $text-muted;
+}
+
+#stats-content {
+    text-align: center;
+    margin: 2 0;
+    padding: 1;
+    border: solid gray;
+    background: $boost;
+}
+

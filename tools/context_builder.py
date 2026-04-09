@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from core.utils import get_vault_path, get_data_dir
-from core.parser import find_notes_by_tags, parse_markdown_file
+from core.parser import find_notes_by_tags, parse_knowledge_note
 
 
 load_dotenv()
@@ -36,7 +36,7 @@ def build_notebooklm_context():
     for file_path in files:
         try:
             # Парсим с удалением блоков Anki и meta
-            text, meta = parse_markdown_file(file_path, remove_anki_blocks=True)
+            text, meta = parse_knowledge_note(file_path, remove_anki_blocks=True)
             
             if not text.strip():
                 continue

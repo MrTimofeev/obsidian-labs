@@ -2,8 +2,8 @@ import json
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from core.utils import get_vault_path, get_data_dir, ensure_dir
-from core.parser import parse_markdown_file
+from core.utils import get_vault_path, get_data_dir
+from core.parser import parse_personal_note
 
 
 load_dotenv()
@@ -37,23 +37,14 @@ def collect_daily_stats():
             files_processed += 1
 
             try:
-                content, metadata = parse_markdown_file(
-                    file_path=file_path, remove_anki_blocks=False)
+                content, metadata, entry_data = parse_personal_note(
+                    file_path=file_path)
 
                 date_val = metadata.get("Дата")
 
                 if not date_val:
                     continue
 
-                entry_data = {}
-                for line in content.split('\n'):
-                    if "::" in line:
-                        parts = line.split("::", 1)
-                        if len(parts) == 2:
-                            key = parts[0].replace("-", "").strip()
-                            val = parts[1].strip()
-                            if key != "Дата":
-                                entry_data[key] = val
                 if entry_data:
                     all_data.append({
                         "дата": date_val,
